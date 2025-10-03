@@ -14,8 +14,9 @@ class GeoTIFFLoader {
     // 大規模データ対応の設定
     this.maxFileSize = 500 * 1024 * 1024; // 500MB
     this.chunkSize = 1024 * 1024; // 1MB chunks
-    this.maxResolution = 2048; // 最大解像度
+    this.maxResolution = 1024; // 最大解像度をさらに下げる
     this.progressiveLoading = true;
+    this.useWebWorker = false; // Web Worker使用フラグ
   }
 
   async loadGeoTIFF(arrayBuffer, options = {}) {
@@ -25,8 +26,10 @@ class GeoTIFFLoader {
       const fileSize = arrayBuffer.byteLength;
       console.log(`ファイルサイズ: ${(fileSize / (1024 * 1024)).toFixed(2)}MB`);
       
-      // 大規模データの場合はプログレッシブローディングを使用
-      if (fileSize > this.maxFileSize) {
+      // より低い閾値で大規模データ処理を適用（100MB以上）
+      const largeFileThreshold = 100 * 1024 * 1024; // 100MB
+      if (fileSize > largeFileThreshold) {
+        console.log('大規模ファイルとして処理します');
         return await this.loadLargeGeoTIFF(arrayBuffer, options);
       }
       
@@ -104,12 +107,40 @@ class GeoTIFFLoader {
         tiePoint
       });
 
-      // 画像データの安全な読み込み
+      // 画像データの安全な読み込み（スタックオーバーフロー対策）
       let rasters = null;
       let elevationData = null;
 
       try {
-        rasters = await image.readRasters();
+        // 解像度を制限してスタックオーバーフローを防ぐ
+        const width = image.getWidth();
+        const height = image.getHeight();
+        const maxDimension = Math.max(width, height);
+        const totalPixels = width * height;
+        
+        // より厳格な制限を適用
+        let targetResolution = this.maxResolution;
+        if (totalPixels > 2000000) { // 200万ピクセル以上
+          targetResolution = 512;
+        } else if (totalPixels > 1000000) { // 100万ピクセル以上
+          targetResolution = 768;
+        }
+        
+        if (maxDimension > targetResolution) {
+          console.log(`解像度が大きすぎます (${width}x${height}, ${totalPixels}ピクセル)。${targetResolution}に制限します。`);
+          const scaleFactor = targetResolution / maxDimension;
+          const targetWidth = Math.floor(width * scaleFactor);
+          const targetHeight = Math.floor(height * scaleFactor);
+          
+          rasters = await image.readRasters({
+            width: targetWidth,
+            height: targetHeight,
+            resampleMethod: 'nearest'
+          });
+        } else {
+          rasters = await image.readRasters();
+        }
+        
         if (rasters && rasters.length > 0) {
           elevationData = rasters[0]; // 最初のバンドを標高データとして使用
         } else {
@@ -117,7 +148,38 @@ class GeoTIFFLoader {
         }
       } catch (e) {
         console.error('ラスターデータの読み込みに失敗:', e);
-        throw new Error(`ラスターデータの読み込みに失敗しました: ${e.message}`);
+        
+        // スタックオーバーフローの場合は、さらに解像度を下げて再試行
+        if (e.message.includes('maximum call stack size exceeded') || e.message.includes('RangeError')) {
+          console.log('スタックオーバーフローが発生しました。解像度をさらに下げて再試行します。');
+          
+          try {
+            const emergencyResolution = 256; // 緊急時の解像度
+            const scaleFactor = emergencyResolution / Math.max(width, height);
+            const emergencyWidth = Math.floor(width * scaleFactor);
+            const emergencyHeight = Math.floor(height * scaleFactor);
+            
+            console.log(`緊急モード: 解像度を${emergencyWidth}x${emergencyHeight}に下げます`);
+            
+            rasters = await image.readRasters({
+              width: emergencyWidth,
+              height: emergencyHeight,
+              resampleMethod: 'nearest'
+            });
+            
+            if (rasters && rasters.length > 0) {
+              elevationData = rasters[0];
+              console.log('緊急モードでデータの読み込みに成功しました');
+            } else {
+              throw new Error('緊急モードでもデータの読み込みに失敗しました');
+            }
+          } catch (emergencyError) {
+            console.error('緊急モードでも失敗:', emergencyError);
+            throw new Error(`GeoTIFFファイルが大きすぎて読み込めません。より小さなファイルを試してください。元のエラー: ${e.message}`);
+          }
+        } else {
+          throw new Error(`ラスターデータの読み込みに失敗しました: ${e.message}`);
+        }
       }
 
       // バウンディングボックスの計算
