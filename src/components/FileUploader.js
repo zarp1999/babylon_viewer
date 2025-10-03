@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import './FileUploader.css';
 
-const FileUploader = ({ onFileLoad, isLoading, error }) => {
+const FileUploader = ({ onFileLoad, isLoading, error, progress }) => {
   const fileInputRef = useRef(null);
 
   const handleFileSelect = (event) => {
@@ -14,11 +14,22 @@ const FileUploader = ({ onFileLoad, isLoading, error }) => {
         return;
       }
 
-      // ファイルサイズの検証（100MB制限）
-      const maxSize = 100 * 1024 * 1024; // 100MB
+      // ファイルサイズの検証（1GB制限に拡張）
+      const maxSize = 1024 * 1024 * 1024; // 1GB
       if (file.size > maxSize) {
-        alert('ファイルサイズが大きすぎます。100MB以下のファイルを選択してください。');
+        alert('ファイルサイズが大きすぎます。1GB以下のファイルを選択してください。');
         return;
+      }
+
+      // 大規模ファイルの警告
+      const fileSizeMB = file.size / (1024 * 1024);
+      if (fileSizeMB > 500) {
+        const confirmed = window.confirm(
+          `大規模ファイル（${fileSizeMB.toFixed(1)}MB）が検出されました。\n` +
+          'パフォーマンスを向上させるため、解像度を自動的に調整します。\n' +
+          '続行しますか？'
+        );
+        if (!confirmed) return;
       }
 
       onFileLoad(file);
@@ -55,6 +66,17 @@ const FileUploader = ({ onFileLoad, isLoading, error }) => {
           <div className="upload-loading">
             <div className="loading-spinner"></div>
             <p>読み込み中...</p>
+            {progress !== undefined && (
+              <div className="progress-container">
+                <div className="progress-bar">
+                  <div 
+                    className="progress-fill" 
+                    style={{ width: `${progress}%` }}
+                  ></div>
+                </div>
+                <p className="progress-text">{progress.toFixed(1)}%</p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="upload-content">
@@ -70,7 +92,10 @@ const FileUploader = ({ onFileLoad, isLoading, error }) => {
             </button>
             <p className="file-info">
               対応形式: .tif, .tiff<br/>
-              最大サイズ: 100MB
+              最大サイズ: 1GB<br/>
+              <span className="large-file-note">
+                ※500MB以上のファイルは自動的に最適化されます
+              </span>
             </p>
           </div>
         )}

@@ -9,6 +9,8 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
   const sceneRef = useRef(null);
   const cameraRef = useRef(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [memoryUsage, setMemoryUsage] = useState(null);
+  const [terrainInfo, setTerrainInfo] = useState(null);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -54,6 +56,19 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       scene.render();
     });
 
+    // メモリ使用量の監視
+    const memoryInterval = setInterval(() => {
+      if (performance.memory) {
+        const memory = performance.memory;
+        setMemoryUsage({
+          used: (memory.usedJSHeapSize / (1024 * 1024)).toFixed(1),
+          total: (memory.totalJSHeapSize / (1024 * 1024)).toFixed(1),
+          limit: (memory.jsHeapSizeLimit / (1024 * 1024)).toFixed(1),
+          usage: ((memory.usedJSHeapSize / memory.jsHeapSizeLimit) * 100).toFixed(1)
+        });
+      }
+    }, 2000);
+
     // リサイズハンドラー
     const handleResize = () => {
       engine.resize();
@@ -62,6 +77,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      clearInterval(memoryInterval);
       engine.dispose();
     };
   }, []);
@@ -91,7 +107,22 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       const terrainData = await loader.loadGeoTIFF(arrayBuffer);
       
       if (terrainData && sceneRef.current) {
+        // 地形情報の設定
+        setTerrainInfo({
+          width: terrainData.width,
+          height: terrainData.height,
+          originalWidth: terrainData.originalWidth,
+          originalHeight: terrainData.originalHeight,
+          isLargeFile: terrainData.isLargeFile,
+          scaleFactor: terrainData.scaleFactor
+        });
+        
         createTerrainMesh(terrainData);
+        
+        // メモリクリーンアップ
+        if (terrainData.isLargeFile) {
+          loader.cleanupMemory();
+        }
       }
     } catch (error) {
       console.error('GeoTIFFの読み込みエラー:', error);
@@ -225,6 +256,31 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
         <div className="loading-overlay">
           <div className="loading-spinner"></div>
           <p>GeoTIFFファイルを読み込み中...</p>
+        </div>
+      )}
+      
+      {/* メモリ使用量と地形情報の表示 */}
+      {(memoryUsage || terrainInfo) && (
+        <div className="info-overlay">
+          {memoryUsage && (
+            <div className="memory-info">
+              <h4>メモリ使用量</h4>
+              <p>使用中: {memoryUsage.used}MB / {memoryUsage.limit}MB</p>
+              <p>使用率: {memoryUsage.usage}%</p>
+            </div>
+          )}
+          {terrainInfo && (
+            <div className="terrain-info">
+              <h4>地形情報</h4>
+              <p>解像度: {terrainInfo.width}×{terrainInfo.height}</p>
+              {terrainInfo.isLargeFile && (
+                <p>元の解像度: {terrainInfo.originalWidth}×{terrainInfo.originalHeight}</p>
+              )}
+              {terrainInfo.scaleFactor && (
+                <p>スケール: {(terrainInfo.scaleFactor * 100).toFixed(1)}%</p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

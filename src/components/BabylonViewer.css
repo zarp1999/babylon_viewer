@@ -46,3 +46,40 @@
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+.info-overlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background-color: rgba(0, 0, 0, 0.8);
+  border-radius: 8px;
+  padding: 1rem;
+  color: #ffffff;
+  font-size: 0.8rem;
+  max-width: 250px;
+  z-index: 100;
+}
+
+.memory-info, .terrain-info {
+  margin-bottom: 1rem;
+}
+
+.memory-info:last-child, .terrain-info:last-child {
+  margin-bottom: 0;
+}
+
+.memory-info h4, .terrain-info h4 {
+  margin: 0 0 0.5rem 0;
+  color: #61dafb;
+  font-size: 0.9rem;
+}
+
+.memory-info p, .terrain-info p {
+  margin: 0.25rem 0;
+  color: #cccccc;
+  font-size: 0.8rem;
+}
+
+.memory-info p:last-child, .terrain-info p:last-child {
+  margin-bottom: 0;
+}
