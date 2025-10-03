@@ -39,7 +39,8 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     camera.lowerRadiusLimit = 1;
     
     // カメラコントロールの設定（Babylon.js v6対応）
-    camera.attachControls(canvasRef.current, true);
+    // カメラコントロールは自動的に有効になるため、追加設定は不要
+    // 必要に応じて個別の入力コントロールを設定
     
     // ライティングの設定
     const light = new HemisphericLight("light", new Vector3(0, 1, 0), scene);
