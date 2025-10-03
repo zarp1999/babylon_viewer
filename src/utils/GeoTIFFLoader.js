@@ -31,23 +31,71 @@ class GeoTIFFLoader {
       }
       
       // GeoTIFFファイルの読み込み
-      const tiff = await fromArrayBuffer(arrayBuffer);
-      const image = await tiff.getImage();
+      let tiff = null;
+      let image = null;
+
+      try {
+        tiff = await fromArrayBuffer(arrayBuffer);
+        image = await tiff.getImage();
+      } catch (e) {
+        console.error('GeoTIFFファイルの解析に失敗:', e);
+        throw new Error(`GeoTIFFファイルの解析に失敗しました: ${e.message}`);
+      }
       
-      console.log('GeoTIFFメタデータ:', {
+      // メタデータの安全な取得
+      const metadata = {
         width: image.getWidth(),
         height: image.getHeight(),
         samplesPerPixel: image.getSamplesPerPixel(),
-        bitsPerSample: image.getBitsPerSample(),
-        photometricInterpretation: image.getPhotometricInterpretation(),
-        planarConfiguration: image.getPlanarConfiguration()
-      });
+        bitsPerSample: image.getBitsPerSample()
+      };
 
-      // 地理参照情報の取得
-      const geoKeys = image.getGeoKeys();
-      const bbox = image.getBoundingBox();
-      const pixelScale = image.getFileDirectory().ModelPixelScale;
-      const tiePoint = image.getFileDirectory().ModelTiepoint;
+      // オプショナルなメタデータの安全な取得
+      try {
+        if (typeof image.getPhotometricInterpretation === 'function') {
+          metadata.photometricInterpretation = image.getPhotometricInterpretation();
+        }
+      } catch (e) {
+        console.warn('PhotometricInterpretationの取得に失敗:', e);
+      }
+
+      try {
+        if (typeof image.getPlanarConfiguration === 'function') {
+          metadata.planarConfiguration = image.getPlanarConfiguration();
+        }
+      } catch (e) {
+        console.warn('PlanarConfigurationの取得に失敗:', e);
+      }
+
+      console.log('GeoTIFFメタデータ:', metadata);
+
+      // 地理参照情報の安全な取得
+      let geoKeys = null;
+      let bbox = null;
+      let pixelScale = null;
+      let tiePoint = null;
+
+      try {
+        geoKeys = image.getGeoKeys();
+      } catch (e) {
+        console.warn('GeoKeysの取得に失敗:', e);
+      }
+
+      try {
+        bbox = image.getBoundingBox();
+      } catch (e) {
+        console.warn('BoundingBoxの取得に失敗:', e);
+      }
+
+      try {
+        const fileDirectory = image.getFileDirectory();
+        if (fileDirectory) {
+          pixelScale = fileDirectory.ModelPixelScale;
+          tiePoint = fileDirectory.ModelTiepoint;
+        }
+      } catch (e) {
+        console.warn('FileDirectoryの取得に失敗:', e);
+      }
       
       console.log('地理参照情報:', {
         geoKeys,
@@ -56,9 +104,21 @@ class GeoTIFFLoader {
         tiePoint
       });
 
-      // 画像データの読み込み
-      const rasters = await image.readRasters();
-      const elevationData = rasters[0]; // 最初のバンドを標高データとして使用
+      // 画像データの安全な読み込み
+      let rasters = null;
+      let elevationData = null;
+
+      try {
+        rasters = await image.readRasters();
+        if (rasters && rasters.length > 0) {
+          elevationData = rasters[0]; // 最初のバンドを標高データとして使用
+        } else {
+          throw new Error('ラスターデータが取得できませんでした');
+        }
+      } catch (e) {
+        console.error('ラスターデータの読み込みに失敗:', e);
+        throw new Error(`ラスターデータの読み込みに失敗しました: ${e.message}`);
+      }
 
       // バウンディングボックスの計算
       const bounds = this.calculateBounds(bbox, geoKeys);
@@ -88,7 +148,21 @@ class GeoTIFFLoader {
 
     } catch (error) {
       console.error('GeoTIFF読み込みエラー:', error);
-      throw new Error(`GeoTIFFファイルの読み込みに失敗しました: ${error.message}`);
+      
+      // より詳細なエラーメッセージを提供
+      let errorMessage = 'GeoTIFFファイルの読み込みに失敗しました';
+      
+      if (error.message.includes('getPhotometricInterpretation')) {
+        errorMessage = 'GeoTIFFファイルの形式がサポートされていません。別のGeoTIFFファイルを試してください。';
+      } else if (error.message.includes('readRasters')) {
+        errorMessage = 'GeoTIFFファイルの画像データを読み込めませんでした。ファイルが破損している可能性があります。';
+      } else if (error.message.includes('fromArrayBuffer')) {
+        errorMessage = 'GeoTIFFファイルの解析に失敗しました。有効なGeoTIFFファイルであることを確認してください。';
+      } else {
+        errorMessage = `GeoTIFFファイルの読み込みに失敗しました: ${error.message}`;
+      }
+      
+      throw new Error(errorMessage);
     }
   }
 
@@ -168,8 +242,16 @@ class GeoTIFFLoader {
     console.log('大規模ファイルのプログレッシブローディングを開始...');
     
     try {
-      const tiff = await fromArrayBuffer(arrayBuffer);
-      const image = await tiff.getImage();
+      let tiff = null;
+      let image = null;
+
+      try {
+        tiff = await fromArrayBuffer(arrayBuffer);
+        image = await tiff.getImage();
+      } catch (e) {
+        console.error('大規模GeoTIFFファイルの解析に失敗:', e);
+        throw new Error(`大規模GeoTIFFファイルの解析に失敗しました: ${e.message}`);
+      }
       
       const originalWidth = image.getWidth();
       const originalHeight = image.getHeight();
@@ -181,19 +263,45 @@ class GeoTIFFLoader {
       
       console.log(`解像度を ${originalWidth}x${originalHeight} から ${targetWidth}x${targetHeight} に縮小`);
       
-      // 地理参照情報の取得
-      const geoKeys = image.getGeoKeys();
-      const bbox = image.getBoundingBox();
+      // 地理参照情報の安全な取得
+      let geoKeys = null;
+      let bbox = null;
+
+      try {
+        geoKeys = image.getGeoKeys();
+      } catch (e) {
+        console.warn('GeoKeysの取得に失敗:', e);
+      }
+
+      try {
+        bbox = image.getBoundingBox();
+      } catch (e) {
+        console.warn('BoundingBoxの取得に失敗:', e);
+      }
+
       const bounds = this.calculateBounds(bbox, geoKeys);
       
       // 低解像度でのデータ読み込み
-      const rasters = await image.readRasters({
-        width: targetWidth,
-        height: targetHeight,
-        resampleMethod: 'nearest'
-      });
+      let rasters = null;
+      let elevationData = null;
+
+      try {
+        rasters = await image.readRasters({
+          width: targetWidth,
+          height: targetHeight,
+          resampleMethod: 'nearest'
+        });
+        
+        if (rasters && rasters.length > 0) {
+          elevationData = rasters[0];
+        } else {
+          throw new Error('ラスターデータが取得できませんでした');
+        }
+      } catch (e) {
+        console.error('低解像度ラスターデータの読み込みに失敗:', e);
+        throw new Error(`低解像度ラスターデータの読み込みに失敗しました: ${e.message}`);
+      }
       
-      const elevationData = rasters[0];
       const normalizedData = this.normalizeElevationData(elevationData);
       
       console.log('大規模ファイルの読み込み完了:', {
@@ -217,7 +325,21 @@ class GeoTIFFLoader {
       
     } catch (error) {
       console.error('大規模ファイル読み込みエラー:', error);
-      throw new Error(`大規模GeoTIFFファイルの読み込みに失敗しました: ${error.message}`);
+      
+      // より詳細なエラーメッセージを提供
+      let errorMessage = '大規模GeoTIFFファイルの読み込みに失敗しました';
+      
+      if (error.message.includes('getPhotometricInterpretation')) {
+        errorMessage = 'GeoTIFFファイルの形式がサポートされていません。別のGeoTIFFファイルを試してください。';
+      } else if (error.message.includes('readRasters')) {
+        errorMessage = 'GeoTIFFファイルの画像データを読み込めませんでした。ファイルが破損している可能性があります。';
+      } else if (error.message.includes('fromArrayBuffer')) {
+        errorMessage = 'GeoTIFFファイルの解析に失敗しました。有効なGeoTIFFファイルであることを確認してください。';
+      } else {
+        errorMessage = `大規模GeoTIFFファイルの読み込みに失敗しました: ${error.message}`;
+      }
+      
+      throw new Error(errorMessage);
     }
   }
   
