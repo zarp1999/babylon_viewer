@@ -124,7 +124,7 @@ class GeoTIFFLoader {
       const bounds = this.calculateBounds(bbox, geoKeys);
       
       // データの正規化
-      const normalizedData = this.normalizeElevationData(elevationData);
+      const normalizedData = await this.normalizeElevationData(elevationData);
 
       console.log('GeoTIFFデータの読み込み完了:', {
         width: image.getWidth(),
@@ -185,7 +185,7 @@ class GeoTIFFLoader {
     };
   }
 
-  normalizeElevationData(data) {
+  async normalizeElevationData(data) {
     if (!data || data.length === 0) {
       return [];
     }
@@ -204,18 +204,53 @@ class GeoTIFFLoader {
       return new Array(data.length).fill(0);
     }
 
-    const min = Math.min(...validData);
-    const max = Math.max(...validData);
+    // スタックオーバーフローを防ぐため、ループでmin/maxを計算
+    let min = validData[0];
+    let max = validData[0];
+    
+    for (let i = 1; i < validData.length; i++) {
+      const value = validData[i];
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
     
     console.log(`標高データの正規化: min=${min}, max=${max}`);
 
     // データの正規化（0-1の範囲に）
-    return data.map(value => {
-      if (noDataValues.includes(value) || value === null || value === undefined || isNaN(value)) {
-        return 0;
+    const range = max - min;
+    if (range === 0) {
+      // 全ての値が同じ場合
+      return this.normalizeDataBatch(data, noDataValues, () => 0.5);
+    }
+
+    return this.normalizeDataBatch(data, noDataValues, (value) => (value - min) / range);
+  }
+
+  // データのバッチ正規化（メモリ効率を向上）
+  async normalizeDataBatch(data, noDataValues, transformFn) {
+    const result = new Array(data.length);
+    const batchSize = 10000; // バッチサイズ
+    
+    for (let i = 0; i < data.length; i += batchSize) {
+      const end = Math.min(i + batchSize, data.length);
+      
+      for (let j = i; j < end; j++) {
+        const value = data[j];
+        if (noDataValues.includes(value) || value === null || value === undefined || isNaN(value)) {
+          result[j] = 0;
+        } else {
+          result[j] = transformFn(value);
+        }
       }
-      return (value - min) / (max - min);
-    });
+      
+      // メモリ圧迫を防ぐため、バッチ間で少し待機
+      if (i % (batchSize * 10) === 0) {
+        // 非同期処理を可能にするため、次のイベントループで処理を継続
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    
+    return result;
   }
 
   // 投影変換のヘルパーメソッド
@@ -302,7 +337,7 @@ class GeoTIFFLoader {
         throw new Error(`低解像度ラスターデータの読み込みに失敗しました: ${e.message}`);
       }
       
-      const normalizedData = this.normalizeElevationData(elevationData);
+      const normalizedData = await this.normalizeElevationData(elevationData);
       
       console.log('大規模ファイルの読み込み完了:', {
         originalSize: `${originalWidth}x${originalHeight}`,
@@ -455,9 +490,19 @@ class GeoTIFFLoader {
     const variance = validData.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / validData.length;
     const std = Math.sqrt(variance);
 
+    // スタックオーバーフローを防ぐため、ループでmin/maxを計算
+    let min = validData[0];
+    let max = validData[0];
+    
+    for (let i = 1; i < validData.length; i++) {
+      const value = validData[i];
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+
     return {
-      min: Math.min(...validData),
-      max: Math.max(...validData),
+      min,
+      max,
       mean,
       std,
       count: validData.length
