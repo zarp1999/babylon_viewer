@@ -1,5 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Engine, Scene, ArcRotateCamera, HemisphericLight, Vector3, Color3, MeshBuilder, StandardMaterial } from '@babylonjs/core';
+import '@babylonjs/core/Cameras/Inputs/arcRotateCameraPointersInput';
+import '@babylonjs/core/Cameras/Inputs/arcRotateCameraMouseWheelInput';
 import { GeoTIFFLoader } from '../utils/GeoTIFFLoader';
 import './BabylonViewer.css';
 
@@ -37,7 +39,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     camera.lowerRadiusLimit = 1;
     
     // カメラコントロールの設定（Babylon.js v6対応）
-    // カメラコントロールは自動的に有効になるため、追加設定は不要
+    camera.attachControls(canvasRef.current, true);
     
     // ライティングの設定
     const light = new HemisphericLight("light", new Vector3(0, 1, 0), scene);
@@ -134,13 +136,19 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
 
     const { elevationData, width, height, bounds } = terrainData;
     
+    // スケールの計算
+    const scaleX = (bounds.maxX - bounds.minX) / (width - 1);
+    const scaleZ = (bounds.maxY - bounds.minY) / (height - 1);
+    
     // 地形メッシュの作成
     const terrainMesh = createHeightMapMesh(
       elevationData,
       width,
       height,
       bounds,
-      sceneRef.current
+      sceneRef.current,
+      scaleX,
+      scaleZ
     );
     
     if (terrainMesh) {
@@ -150,15 +158,18 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       // カメラの位置を調整
       if (cameraRef.current) {
         const maxDimension = Math.max(width, height);
+        const scale = Math.max(scaleX, scaleZ);
         cameraRef.current.setTarget(Vector3.Zero());
-        cameraRef.current.radius = maxDimension * 2;
+        cameraRef.current.radius = maxDimension * scale * 1.5;
         cameraRef.current.alpha = -Math.PI / 2;
-        cameraRef.current.beta = Math.PI / 2.5;
+        cameraRef.current.beta = Math.PI / 3;
+        cameraRef.current.minZ = 0.1;
+        cameraRef.current.maxZ = 10000;
       }
     }
   };
 
-  const createHeightMapMesh = (elevationData, width, height, bounds, scene) => {
+  const createHeightMapMesh = (elevationData, width, height, bounds, scene, scaleX, scaleZ) => {
     try {
       // 頂点データの作成
       const positions = [];
@@ -166,10 +177,16 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       const uvs = [];
       const normals = [];
 
-      const scaleX = (bounds.maxX - bounds.minX) / (width - 1);
-      const scaleZ = (bounds.maxY - bounds.minY) / (height - 1);
-      const minElevation = Math.min(...elevationData);
-      const maxElevation = Math.max(...elevationData);
+      // scaleXとscaleZは引数から取得
+      
+      // スタックオーバーフローを防ぐため、ループでmin/maxを計算
+      let minElevation = elevationData[0];
+      let maxElevation = elevationData[0];
+      for (let i = 1; i < elevationData.length; i++) {
+        const value = elevationData[i];
+        if (value < minElevation) minElevation = value;
+        if (value > maxElevation) maxElevation = value;
+      }
       const elevationRange = maxElevation - minElevation;
 
       // 頂点の生成
@@ -209,13 +226,13 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
         normals.push(0, 1, 0); // 簡易的な法線計算
       }
 
-      // メッシュの作成
+      // メッシュの作成（カスタムジオメトリ）
       const customMesh = MeshBuilder.CreateGround(
         'terrain',
         {
-          width: (width - 1) * scaleX,
-          height: (height - 1) * scaleZ,
-          subdivisions: Math.min(width - 1, height - 1)
+          width: 1,
+          height: 1,
+          subdivisions: 1
         },
         scene
       );
@@ -225,6 +242,10 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       customMesh.setVerticesData('uv', uvs);
       customMesh.setVerticesData('normal', normals);
       customMesh.setIndices(indices);
+      
+      // メッシュの更新
+      customMesh.createNormals();
+      customMesh.computeWorldMatrix(true);
 
       // マテリアルの設定
       const material = new StandardMaterial('terrainMaterial', scene);
