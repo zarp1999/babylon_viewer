@@ -120,9 +120,11 @@ class GeoTIFFLoader {
         
         // より厳格な制限を適用
         let targetResolution = this.maxResolution;
-        if (totalPixels > 2000000) { // 200万ピクセル以上
+        if (totalPixels > 1000000) { // 100万ピクセル以上
+          targetResolution = 256; // さらに小さくする
+        } else if (totalPixels > 500000) { // 50万ピクセル以上
           targetResolution = 512;
-        } else if (totalPixels > 1000000) { // 100万ピクセル以上
+        } else if (totalPixels > 250000) { // 25万ピクセル以上
           targetResolution = 768;
         }
         
@@ -186,7 +188,7 @@ class GeoTIFFLoader {
       const bounds = this.calculateBounds(bbox, geoKeys);
       
       // データの正規化
-      const normalizedData = await this.normalizeElevationData(elevationData);
+      const normalizedData = this.normalizeElevationData(elevationData);
 
       console.log('GeoTIFFデータの読み込み完了:', {
         width: image.getWidth(),
@@ -247,7 +249,7 @@ class GeoTIFFLoader {
     };
   }
 
-  async normalizeElevationData(data) {
+  normalizeElevationData(data) {
     if (!data || data.length === 0) {
       return [];
     }
@@ -278,14 +280,37 @@ class GeoTIFFLoader {
     
     console.log(`標高データの正規化: min=${min}, max=${max}`);
 
-    // データの正規化（0-1の範囲に）
+    // データの正規化（0-1の範囲に）- 同期的に処理してスタックオーバーフローを防ぐ
     const range = max - min;
     if (range === 0) {
       // 全ての値が同じ場合
-      return this.normalizeDataBatch(data, noDataValues, () => 0.5);
+      return this.normalizeDataSync(data, noDataValues, () => 0.5);
     }
 
-    return this.normalizeDataBatch(data, noDataValues, (value) => (value - min) / range);
+    return this.normalizeDataSync(data, noDataValues, (value) => (value - min) / range);
+  }
+
+  // データの同期的正規化（スタックオーバーフロー対策）
+  normalizeDataSync(data, noDataValues, transformFn) {
+    const result = new Array(data.length);
+    
+    // 小さなバッチで処理してスタックオーバーフローを防ぐ
+    const batchSize = 5000; // バッチサイズを小さくする
+    
+    for (let i = 0; i < data.length; i += batchSize) {
+      const end = Math.min(i + batchSize, data.length);
+      
+      for (let j = i; j < end; j++) {
+        const value = data[j];
+        if (noDataValues.includes(value) || value === null || value === undefined || isNaN(value)) {
+          result[j] = 0;
+        } else {
+          result[j] = transformFn(value);
+        }
+      }
+    }
+    
+    return result;
   }
 
   // データのバッチ正規化（メモリ効率を向上）
@@ -399,7 +424,7 @@ class GeoTIFFLoader {
         throw new Error(`低解像度ラスターデータの読み込みに失敗しました: ${e.message}`);
       }
       
-      const normalizedData = await this.normalizeElevationData(elevationData);
+      const normalizedData = this.normalizeElevationData(elevationData);
       
       console.log('大規模ファイルの読み込み完了:', {
         originalSize: `${originalWidth}x${originalHeight}`,
