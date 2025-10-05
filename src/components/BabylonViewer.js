@@ -153,22 +153,43 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     
     if (terrainMesh) {
       terrainMesh.name = 'terrain-main';
-      terrainMesh.position.y = 0;
       
-      // カメラの位置を調整
+      // カメラの位置を調整（Three.jsと同じロジック）
       if (cameraRef.current) {
         const maxDimension = Math.max(width, height);
         const scale = Math.max(scaleX, scaleZ);
         const terrainSize = maxDimension * scale;
         
-        console.log(`カメラ調整: 地形サイズ=${terrainSize}, スケール=${scale}`);
+        // 標高範囲を計算
+        let minElevation = elevationData[0];
+        let maxElevation = elevationData[0];
+        for (let i = 1; i < elevationData.length; i++) {
+          const value = elevationData[i];
+          if (value < minElevation) minElevation = value;
+          if (value > maxElevation) maxElevation = value;
+        }
+        const elevationRange = maxElevation - minElevation;
+        
+        // 垂直強調係数を計算
+        const getVerticalExaggeration = (elevationRange) => {
+          if (elevationRange < 10) return 10;
+          else if (elevationRange < 100) return 5;
+          else if (elevationRange < 500) return 2;
+          else return 1;
+        };
+        
+        const verticalExaggeration = getVerticalExaggeration(elevationRange);
+        const adjustedRadius = Math.max(terrainSize, elevationRange * verticalExaggeration * 0.1);
+        const distance = Math.max(adjustedRadius * 1.5, 100);
+        
+        console.log(`カメラ調整: 地形サイズ=${terrainSize}, 標高範囲=${elevationRange}, 垂直強調=${verticalExaggeration}x`);
         
         cameraRef.current.setTarget(Vector3.Zero());
-        cameraRef.current.radius = terrainSize * 2; // 地形の2倍の距離
+        cameraRef.current.radius = distance;
         cameraRef.current.alpha = -Math.PI / 2;
-        cameraRef.current.beta = Math.PI / 4; // より良い角度
+        cameraRef.current.beta = Math.PI / 6; // より低い角度で地形を見下ろす
         cameraRef.current.minZ = 0.1;
-        cameraRef.current.maxZ = terrainSize * 10;
+        cameraRef.current.maxZ = distance * 10;
       }
     }
   };
@@ -189,6 +210,22 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       
       console.log(`標高範囲: ${minElevation} - ${maxElevation}, 範囲: ${elevationRange}`);
 
+      // 垂直強調係数を計算（Three.jsと同じロジック）
+      const getVerticalExaggeration = (elevationRange) => {
+        if (elevationRange < 10) {
+          return 10; // 平坦な地形は10倍強調
+        } else if (elevationRange < 100) {
+          return 5;  // 丘陵地は5倍強調
+        } else if (elevationRange < 500) {
+          return 2;  // 山地は2倍強調
+        } else {
+          return 1;  // 高山地は強調なし
+        }
+      };
+
+      const verticalExaggeration = getVerticalExaggeration(elevationRange);
+      console.log(`垂直強調係数: ${verticalExaggeration}x`);
+
       // 頂点データの作成
       const positions = [];
       const indices = [];
@@ -199,12 +236,26 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
         for (let x = 0; x < width; x++) {
           const index = y * width + x;
           const elevation = elevationData[index] || 0;
-          const normalizedElevation = elevationRange > 0 ? 
-            (elevation - minElevation) / elevationRange : 0;
+          
+          // 無効な標高値の場合は最小値を使用
+          const validElevation = (elevation !== null && elevation !== undefined && !isNaN(elevation) && isFinite(elevation)) 
+            ? elevation 
+            : minElevation;
+          
+          // 3D座標を計算（Three.jsと同じロジック）
+          let worldY;
+          
+          // 標高差が小さい場合はピクセル座標を使用
+          if (elevationRange < 1000) {
+            worldY = validElevation;
+          } else {
+            // 地理座標モード
+            worldY = validElevation * verticalExaggeration;
+          }
           
           const xPos = (x - width / 2) * scaleX;
           const zPos = (y - height / 2) * scaleZ;
-          const yPos = normalizedElevation * settings.heightScale * 100;
+          const yPos = worldY * settings.heightScale;
 
           positions.push(xPos, yPos, zPos);
           uvs.push(x / (width - 1), y / (height - 1));
@@ -238,19 +289,23 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       vertexData.normals = [];
       VertexData.ComputeNormals(positions, indices, vertexData.normals);
 
-      // メッシュの作成
-      const customMesh = MeshBuilder.CreateGround('terrain', { width: 1, height: 1, subdivisions: 1 }, scene);
-      vertexData.applyToMesh(customMesh);
+    // メッシュの作成
+    const customMesh = MeshBuilder.CreateGround('terrain', { width: 1, height: 1, subdivisions: 1 }, scene);
+    vertexData.applyToMesh(customMesh);
 
-      // マテリアルの設定
-      const material = new StandardMaterial('terrainMaterial', scene);
-      material.diffuseColor = new Color3(0.4, 0.6, 0.3);
-      material.specularColor = new Color3(0.1, 0.1, 0.1);
-      material.wireframe = settings.wireframe;
-      customMesh.material = material;
+    // 地形を底面が原点0になるように下げる（Three.jsと同じ処理）
+    const minValue = minElevation;
+    customMesh.position.y = -minValue;
 
-      console.log('地形メッシュ作成完了');
-      return customMesh;
+    // マテリアルの設定
+    const material = new StandardMaterial('terrainMaterial', scene);
+    material.diffuseColor = new Color3(0.4, 0.6, 0.3);
+    material.specularColor = new Color3(0.1, 0.1, 0.1);
+    material.wireframe = settings.wireframe;
+    customMesh.material = material;
+
+    console.log('地形メッシュ作成完了');
+    return customMesh;
     } catch (error) {
       console.error('地形メッシュの作成エラー:', error);
       return null;

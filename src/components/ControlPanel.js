@@ -31,7 +31,7 @@ const ControlPanel = ({ settings, onSettingsChange, disabled }) => {
         <input
           type="range"
           min="0.1"
-          max="5.0"
+          max="10.0"
           step="0.1"
           value={settings.heightScale}
           onChange={(e) => handleSliderChange('heightScale', e.target.value)}
