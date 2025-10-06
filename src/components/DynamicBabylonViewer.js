@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Engine, Scene, ArcRotateCamera, HemisphericLight, Vector3, Color3 } from '@babylonjs/core';
+import { Engine, Scene, UniversalCamera, HemisphericLight, Vector3, Color3 } from '@babylonjs/core';
 import { DynamicTerrainManager } from '../utils/DynamicTerrainManager';
 import './BabylonViewer.css';
 
@@ -20,24 +20,23 @@ const DynamicBabylonViewer = ({ settings, isLoading }) => {
     const engine = new Engine(canvasRef.current, true);
     const scene = new Scene(engine);
     
-    // カメラの設定
-    const camera = new ArcRotateCamera(
+    // カメラの設定（UniversalCamera）
+    const camera = new UniversalCamera(
       "camera",
-      -Math.PI / 2,
-      Math.PI / 3,
-      200,
-      Vector3.Zero(),
+      new Vector3(200, 200, 200),
       scene
     );
     
     // カメラの設定を調整
     camera.setTarget(Vector3.Zero());
-    camera.wheelPrecision = 10;
-    camera.pinchPrecision = 10;
-    camera.upperRadiusLimit = 10000;
-    camera.lowerRadiusLimit = 10;
+    camera.speed = 2.0;
+    camera.angularSensibility = 2000;
+    camera.inertia = 0.9;
     camera.minZ = 0.1;
     camera.maxZ = 100000;
+    
+    // カメラコントロールを有効化
+    camera.attachControls(canvasRef.current, true);
     
     // ライティングの設定
     const light = new HemisphericLight("light", new Vector3(0, 1, 0), scene);

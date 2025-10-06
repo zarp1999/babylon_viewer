@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Engine, Scene, ArcRotateCamera, HemisphericLight, Vector3, Color3, MeshBuilder, StandardMaterial, VertexData, Mesh } from '@babylonjs/core';
+import { Engine, Scene, UniversalCamera, HemisphericLight, Vector3, Color3, MeshBuilder, StandardMaterial, VertexData, Mesh } from '@babylonjs/core';
 import { fromArrayBuffer } from 'geotiff';
 import './BabylonViewer.css';
 
@@ -19,30 +19,23 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     const engine = new Engine(canvasRef.current, true);
     const scene = new Scene(engine);
     
-    // カメラの設定
-    const camera = new ArcRotateCamera(
+    // カメラの設定（UniversalCamera）
+    const camera = new UniversalCamera(
       "camera",
-      -Math.PI / 2,
-      Math.PI / 4,
-      100,
-      Vector3.Zero(),
+      new Vector3(100, 100, 100),
       scene
     );
     
     // カメラの設定を調整
     camera.setTarget(Vector3.Zero());
-    camera.wheelPrecision = 10;
-    camera.pinchPrecision = 10;
-    camera.upperRadiusLimit = 10000;
-    camera.lowerRadiusLimit = 10;
+    camera.speed = 2.0;
+    camera.angularSensibility = 2000;
+    camera.inertia = 0.9;
     camera.minZ = 0.1;
     camera.maxZ = 100000;
     
-    // カメラの位置を初期化
-    camera.position = new Vector3(100, 100, 100);
-    
-    // カメラコントロールの設定（Babylon.js v6対応）
-    // カメラコントロールは自動的に有効になるため、追加設定は不要
+    // カメラコントロールを有効化
+    camera.attachControls(canvasRef.current, true);
     
     // ライティングの設定
     const light = new HemisphericLight("light", new Vector3(0, 1, 0), scene);
@@ -227,7 +220,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
         
         console.log(`カメラ調整: 地形サイズ=${terrainSize}, 標高範囲=${elevationRange}, 最大標高=${maxElevationHeight}, 垂直強調=${verticalExaggeration}x`);
         
-        // カメラの位置を直接設定（ArcRotateCameraの制限を回避）
+        // UniversalCameraの位置を設定
         const cameraPosition = new Vector3(
           distance * 0.7,  // X位置
           distance * 0.7,  // Y位置（高さ）
@@ -237,16 +230,11 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
         cameraRef.current.position = cameraPosition;
         cameraRef.current.setTarget(Vector3.Zero());
         
-        // カメラの制限を設定
-        cameraRef.current.upperRadiusLimit = distance * 3;
-        cameraRef.current.lowerRadiusLimit = distance * 0.1;
+        // UniversalCameraの制限を設定
         cameraRef.current.minZ = 0.1;
         cameraRef.current.maxZ = distance * 10;
         
         console.log(`カメラ位置: (${cameraPosition.x.toFixed(2)}, ${cameraPosition.y.toFixed(2)}, ${cameraPosition.z.toFixed(2)})`);
-        
-        // カメラを強制的に更新
-        cameraRef.current.attachControls(canvasRef.current, true);
       }
     }
   };
