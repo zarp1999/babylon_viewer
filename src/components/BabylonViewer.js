@@ -116,6 +116,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       // 全バンドのデータを読み込み
       const rasterData = await image.readRasters();
       console.log(`読み込まれたバンド数: ${rasterData.length}`);
+      console.log(`データ型: ${typeof rasterData[0]}, 長さ: ${rasterData[0]?.length}`);
       
       // 地理情報を取得
       const bbox = image.getBoundingBox();
@@ -128,32 +129,61 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
         tiepoint: image.getFileDirectory().ModelTiepoint
       });
       
-      // バンドの種類を判定
+      // データの構造を正しく処理
       let elevationArray, colorData = null;
       
-      if (rasterData.length === 1) {
-        // 単一バンド：標高データ
-        elevationArray = rasterData[0];
-        console.log('単一バンド: 標高データとして処理');
-      } else if (rasterData.length >= 3) {
-        // 複数バンド：RGB + 標高の可能性
-        // 最初のバンドを標高として使用
-        elevationArray = rasterData[0];
-        colorData = {
-          red: rasterData[0] || rasterData[0],
-          green: rasterData[1] || rasterData[0],
-          blue: rasterData[2] || rasterData[0]
-        };
-        console.log('複数バンド: RGB + 標高データとして処理');
+      // データが1次元配列か2次元配列かを判定
+      if (Array.isArray(rasterData[0]) && rasterData[0].length > 0) {
+        // 2次元配列の場合（複数バンド）
+        if (rasterData.length === 1) {
+          // 単一バンド：標高データ
+          elevationArray = rasterData[0];
+          console.log('単一バンド: 標高データとして処理');
+        } else if (rasterData.length >= 3) {
+          // 複数バンド：RGB + 標高の可能性
+          elevationArray = rasterData[0];
+          colorData = {
+            red: rasterData[0],
+            green: rasterData[1],
+            blue: rasterData[2]
+          };
+          console.log('複数バンド: RGB + 標高データとして処理');
+        } else {
+          // 2バンドの場合
+          elevationArray = rasterData[0];
+          colorData = {
+            red: rasterData[0],
+            green: rasterData[1],
+            blue: rasterData[0]
+          };
+          console.log('2バンド: 標高 + 色データとして処理');
+        }
       } else {
-        // 2バンドの場合
-        elevationArray = rasterData[0];
-        colorData = {
-          red: rasterData[0],
-          green: rasterData[1] || rasterData[0],
-          blue: rasterData[0]
-        };
-        console.log('2バンド: 標高 + 色データとして処理');
+        // 1次元配列の場合（単一バンド）
+        elevationArray = rasterData;
+        console.log('1次元配列: 単一バンドとして処理');
+      }
+      
+      // 配列の長さをチェック
+      if (!elevationArray || elevationArray.length === 0) {
+        throw new Error('標高データが空です');
+      }
+      
+      console.log(`標高データ長: ${elevationArray.length}, 期待値: ${width * height}`);
+      
+      // データ長が期待値と一致するかチェック
+      if (elevationArray.length !== width * height) {
+        console.warn(`データ長が一致しません: 実際=${elevationArray.length}, 期待=${width * height}`);
+        // データを切り詰めるか、パディングする
+        if (elevationArray.length > width * height) {
+          elevationArray = elevationArray.slice(0, width * height);
+          console.log('データを切り詰めました');
+        } else {
+          // 不足分を最小値でパディング
+          const padding = new Array(width * height - elevationArray.length).fill(elevationArray[0]);
+          elevationArray = [...elevationArray, ...padding];
+          console.log('データをパディングしました');
+        }
       }
       
       // 標高データの統計を計算（実際のGeoTIFFの値を使用）
@@ -309,12 +339,22 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       }
 
       // インデックスの生成（安全な同期的処理）
+      const totalVertices = width * height;
+      console.log(`インデックス生成開始: 頂点数=${totalVertices}, 位置配列長=${positions.length / 3}`);
+      
       for (let y = 0; y < height - 1; y++) {
         for (let x = 0; x < width - 1; x++) {
           const topLeft = y * width + x;
           const topRight = topLeft + 1;
           const bottomLeft = (y + 1) * width + x;
           const bottomRight = bottomLeft + 1;
+
+          // インデックスの範囲チェック
+          if (topLeft >= totalVertices || topRight >= totalVertices || 
+              bottomLeft >= totalVertices || bottomRight >= totalVertices) {
+            console.warn(`インデックス範囲外: ${topLeft}, ${topRight}, ${bottomLeft}, ${bottomRight} (最大: ${totalVertices - 1})`);
+            continue;
+          }
 
           // 最初の三角形（時計回り）
           indices.push(topLeft, topRight, bottomLeft);
@@ -350,18 +390,25 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     if (colorData && colorData.red && colorData.green && colorData.blue) {
       // GeoTIFFの色情報がある場合、頂点カラーを設定
       const colorArray = [];
-      for (let i = 0; i < elevationData.length; i++) {
-        const r = colorData.red[i] / 255.0;   // 0-255を0-1に正規化
-        const g = colorData.green[i] / 255.0;
-        const b = colorData.blue[i] / 255.0;
+      const colorLength = Math.min(elevationData.length, colorData.red.length);
+      
+      for (let i = 0; i < colorLength; i++) {
+        const r = (colorData.red[i] || 0) / 255.0;   // 0-255を0-1に正規化
+        const g = (colorData.green[i] || 0) / 255.0;
+        const b = (colorData.blue[i] || 0) / 255.0;
         colorArray.push(r, g, b, 1.0); // RGBA
+      }
+      
+      // 不足分をデフォルト色でパディング
+      while (colorArray.length < elevationData.length * 4) {
+        colorArray.push(0.5, 0.5, 0.5, 1.0); // グレー
       }
       
       // 頂点カラーを設定
       vertexData.colors = colorArray;
       vertexData.applyToMesh(customMesh);
       
-      console.log('GeoTIFFの色情報を適用');
+      console.log(`GeoTIFFの色情報を適用: ${colorLength}/${elevationData.length}ピクセル`);
     } else {
       // 色情報がない場合、標高に基づく色を生成
       const colorArray = [];
