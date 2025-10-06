@@ -14,7 +14,7 @@ class GeoTIFFLoader {
     // 大規模データ対応の設定
     this.maxFileSize = 500 * 1024 * 1024; // 500MB
     this.chunkSize = 1024 * 1024; // 1MB chunks
-    this.maxResolution = 1024; // 最大解像度をさらに下げる
+    this.maxResolution = 2048; // 最大解像度を増加
     this.progressiveLoading = true;
     this.useWebWorker = false; // Web Worker使用フラグ
   }
@@ -26,8 +26,8 @@ class GeoTIFFLoader {
       const fileSize = arrayBuffer.byteLength;
       console.log(`ファイルサイズ: ${(fileSize / (1024 * 1024)).toFixed(2)}MB`);
       
-      // より低い閾値で大規模データ処理を適用（100MB以上）
-      const largeFileThreshold = 100 * 1024 * 1024; // 100MB
+      // より高い閾値で大規模データ処理を適用（200MB以上）
+      const largeFileThreshold = 200 * 1024 * 1024; // 200MB
       if (fileSize > largeFileThreshold) {
         console.log('大規模ファイルとして処理します');
         return await this.loadLargeGeoTIFF(arrayBuffer, options);
@@ -118,14 +118,16 @@ class GeoTIFFLoader {
         const maxDimension = Math.max(width, height);
         const totalPixels = width * height;
         
-        // より厳格な制限を適用
+        // より柔軟な制限を適用
         let targetResolution = this.maxResolution;
-        if (totalPixels > 1000000) { // 100万ピクセル以上
-          targetResolution = 256; // さらに小さくする
-        } else if (totalPixels > 500000) { // 50万ピクセル以上
-          targetResolution = 512;
-        } else if (totalPixels > 250000) { // 25万ピクセル以上
-          targetResolution = 768;
+        if (totalPixels > 10000000) { // 1000万ピクセル以上
+          targetResolution = 1024; // 高解像度ファイル用
+        } else if (totalPixels > 5000000) { // 500万ピクセル以上
+          targetResolution = 1536;
+        } else if (totalPixels > 2000000) { // 200万ピクセル以上
+          targetResolution = 2048;
+        } else if (totalPixels > 1000000) { // 100万ピクセル以上
+          targetResolution = 2560;
         }
         
         if (maxDimension > targetResolution) {
@@ -468,10 +470,22 @@ class GeoTIFFLoader {
   // 解像度のスケールファクターを計算
   calculateScaleFactor(width, height) {
     const maxDimension = Math.max(width, height);
-    if (maxDimension <= this.maxResolution) {
+    const totalPixels = width * height;
+    
+    // より柔軟な解像度制限
+    let targetResolution = this.maxResolution;
+    if (totalPixels > 20000000) { // 2000万ピクセル以上
+      targetResolution = 1024;
+    } else if (totalPixels > 10000000) { // 1000万ピクセル以上
+      targetResolution = 1536;
+    } else if (totalPixels > 5000000) { // 500万ピクセル以上
+      targetResolution = 2048;
+    }
+    
+    if (maxDimension <= targetResolution) {
       return 1.0;
     }
-    return this.maxResolution / maxDimension;
+    return targetResolution / maxDimension;
   }
   
   // チャンクベースのデータ読み込み（将来の拡張用）
