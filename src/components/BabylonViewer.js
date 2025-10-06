@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Engine, Scene, ArcRotateCamera, HemisphericLight, Vector3, Color3, MeshBuilder, StandardMaterial, VertexData, Mesh } from '@babylonjs/core';
-import { GeoTIFFLoader } from '../utils/GeoTIFFLoader';
+import { fromArrayBuffer } from 'geotiff';
 import './BabylonViewer.css';
 
 const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
@@ -108,26 +108,65 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
 
   const loadGeoTIFFData = async (arrayBuffer) => {
     try {
-      const loader = new GeoTIFFLoader();
-      const terrainData = await loader.loadGeoTIFF(arrayBuffer);
+      console.log('GeoTIFFファイルの読み込みを開始...');
+      
+      // geotiff.jsを直接使用
+      const tiff = await fromArrayBuffer(arrayBuffer);
+      const image = await tiff.getImage();
+      
+      // 画像のサイズを取得
+      const width = image.getWidth();
+      const height = image.getHeight();
+      
+      console.log(`GeoTIFF画像サイズ: ${width} x ${height}`);
+      
+      // 標高データを読み込み
+      const elevationData = await image.readRasters();
+      const elevationArray = elevationData[0]; // 最初のバンド（標高データ）
+      
+      // 地理情報を取得
+      const bbox = image.getBoundingBox();
+      
+      // 標高データの統計を計算
+      let minElevation = elevationArray[0];
+      let maxElevation = elevationArray[0];
+      
+      for (let i = 1; i < elevationArray.length; i++) {
+        const elevation = elevationArray[i];
+        if (elevation !== null && elevation !== undefined && !isNaN(elevation) && isFinite(elevation)) {
+          if (elevation < minElevation) minElevation = elevation;
+          if (elevation > maxElevation) maxElevation = elevation;
+        }
+      }
+      
+      console.log(`標高範囲: ${minElevation.toFixed(2)}m - ${maxElevation.toFixed(2)}m`);
+      
+      const terrainData = {
+        elevationData: elevationArray,
+        width: width,
+        height: height,
+        bounds: {
+          minX: bbox[0],
+          minY: bbox[1],
+          maxX: bbox[2],
+          maxY: bbox[3]
+        },
+        minElevation: minElevation,
+        maxElevation: maxElevation
+      };
       
       if (terrainData && sceneRef.current) {
         // 地形情報の設定
         setTerrainInfo({
           width: terrainData.width,
           height: terrainData.height,
-          originalWidth: terrainData.originalWidth,
-          originalHeight: terrainData.originalHeight,
-          isLargeFile: terrainData.isLargeFile,
-          scaleFactor: terrainData.scaleFactor
+          originalWidth: terrainData.width,
+          originalHeight: terrainData.height,
+          isLargeFile: false,
+          scaleFactor: 1.0
         });
         
         await createTerrainMesh(terrainData);
-        
-        // メモリクリーンアップ
-        if (terrainData.isLargeFile) {
-          loader.cleanupMemory();
-        }
       }
     } catch (error) {
       console.error('GeoTIFFの読み込みエラー:', error);
@@ -249,10 +288,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       const indices = [];
       const uvs = [];
 
-      // 頂点の生成（バッチ処理でスタックオーバーフローを防ぐ）
-      const batchSize = 1000; // バッチサイズを小さくする
-      let processedCount = 0;
-      
+      // 頂点の生成（安全な同期的処理）
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           const index = y * width + x;
@@ -280,18 +316,10 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
 
           positions.push(xPos, yPos, zPos);
           uvs.push(x / (width - 1), y / (height - 1));
-          
-          // バッチ処理の進捗をチェック
-          processedCount++;
-          if (processedCount % batchSize === 0) {
-            // 非同期処理を可能にするため、次のイベントループで処理を継続
-            await new Promise(resolve => setTimeout(resolve, 0));
-          }
         }
       }
 
-      // インデックスの生成（バッチ処理でスタックオーバーフローを防ぐ）
-      let indexCount = 0;
+      // インデックスの生成（安全な同期的処理）
       for (let y = 0; y < height - 1; y++) {
         for (let x = 0; x < width - 1; x++) {
           const topLeft = y * width + x;
@@ -303,13 +331,6 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
           indices.push(topLeft, topRight, bottomLeft);
           // 2番目の三角形（時計回り）
           indices.push(topRight, bottomRight, bottomLeft);
-          
-          // バッチ処理の進捗をチェック
-          indexCount += 6; // 各四角形で6つのインデックス
-          if (indexCount % (batchSize * 6) === 0) {
-            // 非同期処理を可能にするため、次のイベントループで処理を継続
-            await new Promise(resolve => setTimeout(resolve, 0));
-          }
         }
       }
 

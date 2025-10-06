@@ -105,7 +105,7 @@ export class DynamicTerrainManager {
     for (const key of tilesToRemove) {
       const mesh = this.terrainTiles.get(key);
       if (mesh) {
-        this.scene.remove(mesh);
+        this.scene.removeMesh(mesh);
         mesh.dispose();
         this.terrainTiles.delete(key);
         
@@ -137,7 +137,7 @@ export class DynamicTerrainManager {
       const terrainMesh = this.createTerrainMesh(tileData, tileCoord);
       
       this.terrainTiles.set(tileCoord.key, terrainMesh);
-      this.scene.add(terrainMesh);
+      this.scene.addMesh(terrainMesh);
       
       if (this.debugMode) {
         console.log('Dynamic Terrain: タイル読み込み完了', tileCoord.key);
@@ -333,7 +333,7 @@ export class DynamicTerrainManager {
    */
   dispose() {
     for (const [key, mesh] of this.terrainTiles) {
-      this.scene.remove(mesh);
+      this.scene.removeMesh(mesh);
       mesh.dispose();
     }
     this.terrainTiles.clear();
