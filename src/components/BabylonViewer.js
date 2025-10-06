@@ -179,15 +179,16 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
         };
         
         const verticalExaggeration = getVerticalExaggeration(elevationRange);
-        const adjustedRadius = Math.max(terrainSize, elevationRange * verticalExaggeration * 0.1);
-        const distance = Math.max(adjustedRadius * 1.5, 100);
+        const maxElevationHeight = maxElevation * verticalExaggeration * settings.heightScale;
+        const adjustedRadius = Math.max(terrainSize, maxElevationHeight * 0.5);
+        const distance = Math.max(adjustedRadius * 2, 200);
         
-        console.log(`カメラ調整: 地形サイズ=${terrainSize}, 標高範囲=${elevationRange}, 垂直強調=${verticalExaggeration}x`);
+        console.log(`カメラ調整: 地形サイズ=${terrainSize}, 標高範囲=${elevationRange}, 最大標高=${maxElevationHeight}, 垂直強調=${verticalExaggeration}x`);
         
         cameraRef.current.setTarget(Vector3.Zero());
         cameraRef.current.radius = distance;
         cameraRef.current.alpha = -Math.PI / 2;
-        cameraRef.current.beta = Math.PI / 6; // より低い角度で地形を見下ろす
+        cameraRef.current.beta = Math.PI / 4; // より良い角度
         cameraRef.current.minZ = 0.1;
         cameraRef.current.maxZ = distance * 10;
       }
@@ -242,20 +243,20 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
             ? elevation 
             : minElevation;
           
-          // 3D座標を計算（Three.jsと同じロジック）
-          let worldY;
+          // 正規化された標高を実際の標高に変換
+          const actualElevation = minElevation + (validElevation * elevationRange);
           
-          // 標高差が小さい場合はピクセル座標を使用
-          if (elevationRange < 1000) {
-            worldY = validElevation;
-          } else {
-            // 地理座標モード
-            worldY = validElevation * verticalExaggeration;
+          // 3D座標を計算（垂直強調を適用）
+          const worldY = actualElevation * verticalExaggeration * settings.heightScale;
+          
+          // デバッグ用：最初の数点の座標をログ出力
+          if (x < 5 && y < 5) {
+            console.log(`頂点(${x},${y}): 正規化=${validElevation.toFixed(3)}, 実際標高=${actualElevation.toFixed(3)}, Y座標=${worldY.toFixed(3)}`);
           }
           
           const xPos = (x - width / 2) * scaleX;
           const zPos = (y - height / 2) * scaleZ;
-          const yPos = worldY * settings.heightScale;
+          const yPos = worldY;
 
           positions.push(xPos, yPos, zPos);
           uvs.push(x / (width - 1), y / (height - 1));
@@ -293,8 +294,8 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     const customMesh = MeshBuilder.CreateGround('terrain', { width: 1, height: 1, subdivisions: 1 }, scene);
     vertexData.applyToMesh(customMesh);
 
-    // 地形を底面が原点0になるように下げる（Three.jsと同じ処理）
-    const minValue = minElevation;
+    // 地形を底面が原点0になるように下げる
+    const minValue = minElevation * verticalExaggeration * settings.heightScale;
     customMesh.position.y = -minValue;
 
     // マテリアルの設定
