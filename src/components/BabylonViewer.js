@@ -23,20 +23,23 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     const camera = new ArcRotateCamera(
       "camera",
       -Math.PI / 2,
-      Math.PI / 3,
-      50,
+      Math.PI / 4,
+      100,
       Vector3.Zero(),
       scene
     );
     
     // カメラの設定を調整
     camera.setTarget(Vector3.Zero());
-    camera.wheelPrecision = 50;
-    camera.pinchPrecision = 50;
+    camera.wheelPrecision = 10;
+    camera.pinchPrecision = 10;
     camera.upperRadiusLimit = 10000;
-    camera.lowerRadiusLimit = 1;
+    camera.lowerRadiusLimit = 10;
     camera.minZ = 0.1;
     camera.maxZ = 100000;
+    
+    // カメラの位置を初期化
+    camera.position = new Vector3(100, 100, 100);
     
     // カメラコントロールの設定（Babylon.js v6対応）
     // カメラコントロールは自動的に有効になるため、追加設定は不要
@@ -185,12 +188,26 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
         
         console.log(`カメラ調整: 地形サイズ=${terrainSize}, 標高範囲=${elevationRange}, 最大標高=${maxElevationHeight}, 垂直強調=${verticalExaggeration}x`);
         
+        // カメラの位置を直接設定（ArcRotateCameraの制限を回避）
+        const cameraPosition = new Vector3(
+          distance * 0.7,  // X位置
+          distance * 0.7,  // Y位置（高さ）
+          distance * 0.5   // Z位置
+        );
+        
+        cameraRef.current.position = cameraPosition;
         cameraRef.current.setTarget(Vector3.Zero());
-        cameraRef.current.radius = distance;
-        cameraRef.current.alpha = -Math.PI / 2;
-        cameraRef.current.beta = Math.PI / 4; // より良い角度
+        
+        // カメラの制限を設定
+        cameraRef.current.upperRadiusLimit = distance * 3;
+        cameraRef.current.lowerRadiusLimit = distance * 0.1;
         cameraRef.current.minZ = 0.1;
         cameraRef.current.maxZ = distance * 10;
+        
+        console.log(`カメラ位置: (${cameraPosition.x.toFixed(2)}, ${cameraPosition.y.toFixed(2)}, ${cameraPosition.z.toFixed(2)})`);
+        
+        // カメラを強制的に更新
+        cameraRef.current.attachControls(canvasRef.current, true);
       }
     }
   };
@@ -306,6 +323,8 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     customMesh.material = material;
 
     console.log('地形メッシュ作成完了');
+    console.log(`メッシュ位置: (${customMesh.position.x.toFixed(2)}, ${customMesh.position.y.toFixed(2)}, ${customMesh.position.z.toFixed(2)})`);
+    console.log(`メッシュ境界: min=(${customMesh.getBoundingInfo().minimum.x.toFixed(2)}, ${customMesh.getBoundingInfo().minimum.y.toFixed(2)}, ${customMesh.getBoundingInfo().minimum.z.toFixed(2)}), max=(${customMesh.getBoundingInfo().maximum.x.toFixed(2)}, ${customMesh.getBoundingInfo().maximum.y.toFixed(2)}, ${customMesh.getBoundingInfo().maximum.z.toFixed(2)})`);
     return customMesh;
     } catch (error) {
       console.error('地形メッシュの作成エラー:', error);
