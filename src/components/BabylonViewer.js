@@ -108,15 +108,52 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       const image = await tiff.getImage();
       
       // 画像のサイズを取得
-      const width = image.getWidth();
-      const height = image.getHeight();
+      let width = image.getWidth();
+      let height = image.getHeight();
       
       console.log(`GeoTIFF画像サイズ: ${width} x ${height}`);
       
-      // 全バンドのデータを読み込み
-      const rasterData = await image.readRasters();
+      // 画像サイズの制限チェック
+      const totalPixels = width * height;
+      const maxPixels = 10000000; // 1000万ピクセルに制限
+      
+      let rasterData;
+      
+      if (totalPixels > maxPixels) {
+        console.warn(`画像が大きすぎます: ${totalPixels}ピクセル > ${maxPixels}ピクセル`);
+        console.log('画像を縮小して読み込みます...');
+        
+        // 縮小率を計算
+        const scaleFactor = Math.sqrt(maxPixels / totalPixels);
+        const newWidth = Math.floor(width * scaleFactor);
+        const newHeight = Math.floor(height * scaleFactor);
+        
+        console.log(`縮小後サイズ: ${newWidth} x ${newHeight}`);
+        
+        // 縮小した画像を読み込み
+        rasterData = await image.readRasters({
+          window: [0, 0, width, height],
+          width: newWidth,
+          height: newHeight
+        });
+        
+        // サイズを更新
+        width = newWidth;
+        height = newHeight;
+      } else {
+        // 通常の読み込み
+        rasterData = await image.readRasters();
+      }
       console.log(`読み込まれたバンド数: ${rasterData.length}`);
       console.log(`データ型: ${typeof rasterData[0]}, 長さ: ${rasterData[0]?.length}`);
+      console.log(`画像サイズ: ${width} x ${height} = ${width * height}ピクセル`);
+      console.log(`rasterData構造:`, {
+        isArray: Array.isArray(rasterData),
+        length: rasterData.length,
+        firstElement: rasterData[0],
+        firstElementType: typeof rasterData[0],
+        firstElementLength: rasterData[0]?.length
+      });
       
       // 地理情報を取得
       const bbox = image.getBoundingBox();
@@ -132,37 +169,48 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       // データの構造を正しく処理
       let elevationArray, colorData = null;
       
-      // データが1次元配列か2次元配列かを判定
-      if (Array.isArray(rasterData[0]) && rasterData[0].length > 0) {
-        // 2次元配列の場合（複数バンド）
-        if (rasterData.length === 1) {
-          // 単一バンド：標高データ
-          elevationArray = rasterData[0];
-          console.log('単一バンド: 標高データとして処理');
-        } else if (rasterData.length >= 3) {
-          // 複数バンド：RGB + 標高の可能性
-          elevationArray = rasterData[0];
-          colorData = {
-            red: rasterData[0],
-            green: rasterData[1],
-            blue: rasterData[2]
-          };
-          console.log('複数バンド: RGB + 標高データとして処理');
+      // データ構造の詳細チェック
+      console.log('データ構造分析開始...');
+      
+      if (Array.isArray(rasterData) && rasterData.length > 0) {
+        if (Array.isArray(rasterData[0])) {
+          // 2次元配列の場合（複数バンド）
+          console.log('2次元配列を検出');
+          if (rasterData.length === 1) {
+            // 単一バンド：標高データ
+            elevationArray = rasterData[0];
+            console.log('単一バンド: 標高データとして処理');
+          } else if (rasterData.length >= 3) {
+            // 複数バンド：RGB + 標高の可能性
+            elevationArray = rasterData[0];
+            colorData = {
+              red: rasterData[0],
+              green: rasterData[1],
+              blue: rasterData[2]
+            };
+            console.log('複数バンド: RGB + 標高データとして処理');
+          } else {
+            // 2バンドの場合
+            elevationArray = rasterData[0];
+            colorData = {
+              red: rasterData[0],
+              green: rasterData[1],
+              blue: rasterData[0]
+            };
+            console.log('2バンド: 標高 + 色データとして処理');
+          }
         } else {
-          // 2バンドの場合
-          elevationArray = rasterData[0];
-          colorData = {
-            red: rasterData[0],
-            green: rasterData[1],
-            blue: rasterData[0]
-          };
-          console.log('2バンド: 標高 + 色データとして処理');
+          // 1次元配列の場合（単一バンド）
+          console.log('1次元配列を検出');
+          elevationArray = rasterData;
+          console.log('1次元配列: 単一バンドとして処理');
         }
       } else {
-        // 1次元配列の場合（単一バンド）
-        elevationArray = rasterData;
-        console.log('1次元配列: 単一バンドとして処理');
+        console.error('rasterDataが無効です:', rasterData);
+        throw new Error('GeoTIFFデータの読み込みに失敗しました');
       }
+      
+      console.log(`elevationArray長: ${elevationArray?.length}, 型: ${typeof elevationArray}`);
       
       // 配列の長さをチェック
       if (!elevationArray || elevationArray.length === 0) {
@@ -172,15 +220,35 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       console.log(`標高データ長: ${elevationArray.length}, 期待値: ${width * height}`);
       
       // データ長が期待値と一致するかチェック
-      if (elevationArray.length !== width * height) {
-        console.warn(`データ長が一致しません: 実際=${elevationArray.length}, 期待=${width * height}`);
-        // データを切り詰めるか、パディングする
-        if (elevationArray.length > width * height) {
-          elevationArray = elevationArray.slice(0, width * height);
+      const expectedLength = width * height;
+      console.log(`データ長チェック: 実際=${elevationArray.length}, 期待=${expectedLength}`);
+      
+      if (elevationArray.length !== expectedLength) {
+        console.warn(`データ長が一致しません: 実際=${elevationArray.length}, 期待=${expectedLength}`);
+        
+        if (elevationArray.length === 1) {
+          // データが1つしかない場合、その値で全体を埋める
+          console.log('データが1つしかないため、全体を同じ値で埋めます');
+          const singleValue = elevationArray[0];
+          
+          // 安全な配列作成（大きな配列の場合）
+          try {
+            elevationArray = new Array(expectedLength).fill(singleValue);
+            console.log(`データを複製: ${singleValue} -> ${elevationArray.length}個`);
+          } catch (error) {
+            console.error('大きな配列の作成に失敗:', error);
+            // フォールバック: より小さな配列を作成
+            const safeLength = Math.min(expectedLength, 1000000); // 100万要素に制限
+            elevationArray = new Array(safeLength).fill(singleValue);
+            console.log(`安全なサイズで作成: ${safeLength}個`);
+          }
+        } else if (elevationArray.length > expectedLength) {
+          // データが多すぎる場合、切り詰める
+          elevationArray = elevationArray.slice(0, expectedLength);
           console.log('データを切り詰めました');
         } else {
-          // 不足分を最小値でパディング
-          const padding = new Array(width * height - elevationArray.length).fill(elevationArray[0]);
+          // データが不足している場合、パディングする
+          const padding = new Array(expectedLength - elevationArray.length).fill(elevationArray[0] || 0);
           elevationArray = [...elevationArray, ...padding];
           console.log('データをパディングしました');
         }
@@ -385,7 +453,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     customMesh.position.y = -minValue;
 
     // マテリアルの設定（GeoTIFFの色情報を使用）
-    const material = new StandardMaterial('terrainMaterial', scene);
+      const material = new StandardMaterial('terrainMaterial', scene);
     
     if (colorData && colorData.red && colorData.green && colorData.blue) {
       // GeoTIFFの色情報がある場合、頂点カラーを設定
@@ -442,14 +510,14 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       console.log('標高ベースの色を適用');
     }
     
-    material.specularColor = new Color3(0.1, 0.1, 0.1);
-    material.wireframe = settings.wireframe;
-    customMesh.material = material;
+      material.specularColor = new Color3(0.1, 0.1, 0.1);
+      material.wireframe = settings.wireframe;
+      customMesh.material = material;
 
-    console.log('地形メッシュ作成完了');
+      console.log('地形メッシュ作成完了');
     console.log(`メッシュ位置: (${customMesh.position.x.toFixed(2)}, ${customMesh.position.y.toFixed(2)}, ${customMesh.position.z.toFixed(2)})`);
     console.log(`メッシュ境界: min=(${customMesh.getBoundingInfo().minimum.x.toFixed(2)}, ${customMesh.getBoundingInfo().minimum.y.toFixed(2)}, ${customMesh.getBoundingInfo().minimum.z.toFixed(2)}), max=(${customMesh.getBoundingInfo().maximum.x.toFixed(2)}, ${customMesh.getBoundingInfo().maximum.y.toFixed(2)}, ${customMesh.getBoundingInfo().maximum.z.toFixed(2)})`);
-    return customMesh;
+      return customMesh;
     } catch (error) {
       console.error('地形メッシュの作成エラー:', error);
       return null;
