@@ -113,29 +113,69 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       
       console.log(`GeoTIFF画像サイズ: ${width} x ${height}`);
       
-      // 標高データを読み込み
-      const elevationData = await image.readRasters();
-      const elevationArray = elevationData[0]; // 最初のバンド（標高データ）
+      // 全バンドのデータを読み込み
+      const rasterData = await image.readRasters();
+      console.log(`読み込まれたバンド数: ${rasterData.length}`);
       
       // 地理情報を取得
       const bbox = image.getBoundingBox();
+      const geoKeys = image.getGeoKeys();
       
-      // 標高データの統計を計算
+      console.log('地理参照情報:', {
+        bbox: bbox,
+        geoKeys: geoKeys,
+        pixelScale: image.getFileDirectory().ModelPixelScale,
+        tiepoint: image.getFileDirectory().ModelTiepoint
+      });
+      
+      // バンドの種類を判定
+      let elevationArray, colorData = null;
+      
+      if (rasterData.length === 1) {
+        // 単一バンド：標高データ
+        elevationArray = rasterData[0];
+        console.log('単一バンド: 標高データとして処理');
+      } else if (rasterData.length >= 3) {
+        // 複数バンド：RGB + 標高の可能性
+        // 最初のバンドを標高として使用
+        elevationArray = rasterData[0];
+        colorData = {
+          red: rasterData[0] || rasterData[0],
+          green: rasterData[1] || rasterData[0],
+          blue: rasterData[2] || rasterData[0]
+        };
+        console.log('複数バンド: RGB + 標高データとして処理');
+      } else {
+        // 2バンドの場合
+        elevationArray = rasterData[0];
+        colorData = {
+          red: rasterData[0],
+          green: rasterData[1] || rasterData[0],
+          blue: rasterData[0]
+        };
+        console.log('2バンド: 標高 + 色データとして処理');
+      }
+      
+      // 標高データの統計を計算（実際のGeoTIFFの値を使用）
       let minElevation = elevationArray[0];
       let maxElevation = elevationArray[0];
+      let validCount = 0;
       
-      for (let i = 1; i < elevationArray.length; i++) {
+      for (let i = 0; i < elevationArray.length; i++) {
         const elevation = elevationArray[i];
         if (elevation !== null && elevation !== undefined && !isNaN(elevation) && isFinite(elevation)) {
           if (elevation < minElevation) minElevation = elevation;
           if (elevation > maxElevation) maxElevation = elevation;
+          validCount++;
         }
       }
       
       console.log(`標高範囲: ${minElevation.toFixed(2)}m - ${maxElevation.toFixed(2)}m`);
+      console.log(`有効な標高データ数: ${validCount}/${elevationArray.length}`);
       
       const terrainData = {
         elevationData: elevationArray,
+        colorData: colorData,
         width: width,
         height: height,
         bounds: {
@@ -145,7 +185,8 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
           maxY: bbox[3]
         },
         minElevation: minElevation,
-        maxElevation: maxElevation
+        maxElevation: maxElevation,
+        geoKeys: geoKeys
       };
       
       if (terrainData && sceneRef.current) {
@@ -169,7 +210,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
   const createTerrainMesh = async (terrainData) => {
     if (!sceneRef.current) return;
 
-    const { elevationData, width, height, bounds } = terrainData;
+    const { elevationData, colorData, width, height, bounds, minElevation, maxElevation } = terrainData;
     
     // スケールの計算
     const scaleX = (bounds.maxX - bounds.minX) / (width - 1);
@@ -178,9 +219,12 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     // 地形メッシュの作成
     const terrainMesh = await createHeightMapMesh(
       elevationData,
+      colorData,
       width,
       height,
       bounds,
+      minElevation,
+      maxElevation,
       sceneRef.current,
       scaleX,
       scaleZ
@@ -195,30 +239,13 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
         const scale = Math.max(scaleX, scaleZ);
         const terrainSize = maxDimension * scale;
         
-        // 標高範囲を計算
-        let minElevation = elevationData[0];
-        let maxElevation = elevationData[0];
-        for (let i = 1; i < elevationData.length; i++) {
-          const value = elevationData[i];
-          if (value < minElevation) minElevation = value;
-          if (value > maxElevation) maxElevation = value;
-        }
+        // GeoTIFFの実際の標高範囲を使用
         const elevationRange = maxElevation - minElevation;
-        
-        // 垂直強調係数を計算
-        const getVerticalExaggeration = (elevationRange) => {
-          if (elevationRange < 10) return 10;
-          else if (elevationRange < 100) return 5;
-          else if (elevationRange < 500) return 2;
-          else return 1;
-        };
-        
-        const verticalExaggeration = getVerticalExaggeration(elevationRange);
-        const maxElevationHeight = maxElevation * verticalExaggeration * settings.heightScale;
+        const maxElevationHeight = maxElevation * settings.heightScale;
         const adjustedRadius = Math.max(terrainSize, maxElevationHeight * 0.5);
         const distance = Math.max(adjustedRadius * 2, 200);
         
-        console.log(`カメラ調整: 地形サイズ=${terrainSize}, 標高範囲=${elevationRange}, 最大標高=${maxElevationHeight}, 垂直強調=${verticalExaggeration}x`);
+        console.log(`カメラ調整: 地形サイズ=${terrainSize}, GeoTIFF標高範囲=${elevationRange.toFixed(2)}m, 最大標高=${maxElevationHeight.toFixed(2)}m`);
         
         // UniversalCameraの位置を設定
         const cameraPosition = new Vector3(
@@ -239,63 +266,37 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     }
   };
 
-  const createHeightMapMesh = async (elevationData, width, height, bounds, scene, scaleX, scaleZ) => {
+  const createHeightMapMesh = async (elevationData, colorData, width, height, bounds, minElevation, maxElevation, scene, scaleX, scaleZ) => {
     try {
       console.log(`地形メッシュ作成開始: ${width}x${height}, データ数: ${elevationData.length}`);
+      console.log(`GeoTIFF標高範囲: ${minElevation.toFixed(2)}m - ${maxElevation.toFixed(2)}m`);
       
-      // スタックオーバーフローを防ぐため、ループでmin/maxを計算
-      let minElevation = elevationData[0];
-      let maxElevation = elevationData[0];
-      for (let i = 1; i < elevationData.length; i++) {
-        const value = elevationData[i];
-        if (value < minElevation) minElevation = value;
-        if (value > maxElevation) maxElevation = value;
-      }
+      // GeoTIFFの実際の標高範囲を使用
       const elevationRange = maxElevation - minElevation;
-      
-      console.log(`標高範囲: ${minElevation} - ${maxElevation}, 範囲: ${elevationRange}`);
-
-      // 垂直強調係数を計算（Three.jsと同じロジック）
-      const getVerticalExaggeration = (elevationRange) => {
-        if (elevationRange < 10) {
-          return 10; // 平坦な地形は10倍強調
-        } else if (elevationRange < 100) {
-          return 5;  // 丘陵地は5倍強調
-        } else if (elevationRange < 500) {
-          return 2;  // 山地は2倍強調
-        } else {
-          return 1;  // 高山地は強調なし
-        }
-      };
-
-      const verticalExaggeration = getVerticalExaggeration(elevationRange);
-      console.log(`垂直強調係数: ${verticalExaggeration}x`);
+      console.log(`標高範囲: ${elevationRange.toFixed(2)}m`);
 
       // 頂点データの作成
       const positions = [];
       const indices = [];
       const uvs = [];
 
-      // 頂点の生成（安全な同期的処理）
+      // 頂点の生成（GeoTIFFの実際の値を使用）
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           const index = y * width + x;
-          const elevation = elevationData[index] || 0;
+          const elevation = elevationData[index];
           
           // 無効な標高値の場合は最小値を使用
           const validElevation = (elevation !== null && elevation !== undefined && !isNaN(elevation) && isFinite(elevation)) 
             ? elevation 
             : minElevation;
           
-          // 正規化された標高を実際の標高に変換
-          const actualElevation = minElevation + (validElevation * elevationRange);
-          
-          // 3D座標を計算（垂直強調を適用）
-          const worldY = actualElevation * verticalExaggeration * settings.heightScale;
+          // GeoTIFFの実際の標高値をそのまま使用（メートル単位）
+          const worldY = validElevation * settings.heightScale;
           
           // デバッグ用：最初の数点の座標をログ出力
           if (x < 5 && y < 5) {
-            console.log(`頂点(${x},${y}): 正規化=${validElevation.toFixed(3)}, 実際標高=${actualElevation.toFixed(3)}, Y座標=${worldY.toFixed(3)}`);
+            console.log(`頂点(${x},${y}): GeoTIFF標高=${validElevation.toFixed(3)}m, Y座標=${worldY.toFixed(3)}`);
           }
           
           const xPos = (x - width / 2) * scaleX;
@@ -340,12 +341,60 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       vertexData.applyToMesh(customMesh);
 
     // 地形を底面が原点0になるように下げる
-    const minValue = minElevation * verticalExaggeration * settings.heightScale;
+    const minValue = minElevation * settings.heightScale;
     customMesh.position.y = -minValue;
 
-    // マテリアルの設定
+    // マテリアルの設定（GeoTIFFの色情報を使用）
     const material = new StandardMaterial('terrainMaterial', scene);
-    material.diffuseColor = new Color3(0.4, 0.6, 0.3);
+    
+    if (colorData && colorData.red && colorData.green && colorData.blue) {
+      // GeoTIFFの色情報がある場合、頂点カラーを設定
+      const colorArray = [];
+      for (let i = 0; i < elevationData.length; i++) {
+        const r = colorData.red[i] / 255.0;   // 0-255を0-1に正規化
+        const g = colorData.green[i] / 255.0;
+        const b = colorData.blue[i] / 255.0;
+        colorArray.push(r, g, b, 1.0); // RGBA
+      }
+      
+      // 頂点カラーを設定
+      vertexData.colors = colorArray;
+      vertexData.applyToMesh(customMesh);
+      
+      console.log('GeoTIFFの色情報を適用');
+    } else {
+      // 色情報がない場合、標高に基づく色を生成
+      const colorArray = [];
+      for (let i = 0; i < elevationData.length; i++) {
+        const elevation = elevationData[i];
+        const normalizedElevation = (elevation - minElevation) / (maxElevation - minElevation);
+        
+        // 標高に基づいて色を計算
+        let r, g, b;
+        if (normalizedElevation < 0.3) {
+          // 低地：青（海）
+          r = 0.2; g = 0.4; b = 0.8;
+        } else if (normalizedElevation < 0.6) {
+          // 平地：緑（草地）
+          r = 0.3; g = 0.7; b = 0.3;
+        } else if (normalizedElevation < 0.8) {
+          // 丘陵：茶色（土）
+          r = 0.6; g = 0.4; b = 0.2;
+        } else {
+          // 高地：白（雪）
+          r = 0.9; g = 0.9; b = 0.9;
+        }
+        
+        colorArray.push(r, g, b, 1.0); // RGBA
+      }
+      
+      // 頂点カラーを設定
+      vertexData.colors = colorArray;
+      vertexData.applyToMesh(customMesh);
+      
+      console.log('標高ベースの色を適用');
+    }
+    
     material.specularColor = new Color3(0.1, 0.1, 0.1);
     material.wireframe = settings.wireframe;
     customMesh.material = material;
