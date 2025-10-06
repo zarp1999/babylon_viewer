@@ -35,7 +35,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     camera.maxZ = 100000;
     
     // カメラコントロールを有効化
-    camera.attachControls(canvasRef.current, true);
+    camera.attachControl(canvasRef.current, true);
     
     // ライティングの設定
     const light = new HemisphericLight("light", new Vector3(0, 1, 0), scene);
