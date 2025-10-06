@@ -126,3 +126,141 @@
     height: 60vh;
   }
 }
+
+/* Dynamic Viewer Styles */
+.viewer-mode-selector {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background-color: #2d2d2d;
+  border-radius: 8px;
+  border: 1px solid #444;
+}
+
+.viewer-mode-selector h4 {
+  margin: 0 0 1rem 0;
+  color: #61dafb;
+  font-size: 1.1rem;
+}
+
+.mode-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.mode-buttons button {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  background-color: #444;
+  color: #fff;
+  border: 1px solid #666;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+
+.mode-buttons button:hover {
+  background-color: #555;
+  border-color: #777;
+}
+
+.mode-buttons button.active {
+  background-color: #61dafb;
+  color: #1a1a1a;
+  border-color: #61dafb;
+}
+
+.mode-description {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ccc;
+  line-height: 1.4;
+}
+
+.dynamic-babylon-viewer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.debug-overlay {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  z-index: 1000;
+  max-width: 300px;
+}
+
+.debug-overlay h4 {
+  margin: 0 0 0.5rem 0;
+  color: #61dafb;
+  font-size: 1rem;
+}
+
+.debug-overlay p {
+  margin: 0.25rem 0;
+  font-family: 'Courier New', monospace;
+}
+
+.memory-overlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  z-index: 1000;
+}
+
+.memory-overlay h4 {
+  margin: 0 0 0.5rem 0;
+  color: #61dafb;
+  font-size: 1rem;
+}
+
+.memory-overlay p {
+  margin: 0.25rem 0;
+  font-family: 'Courier New', monospace;
+}
+
+.controls-overlay {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  z-index: 1000;
+  max-width: 300px;
+}
+
+.controls-overlay h4 {
+  margin: 0 0 0.5rem 0;
+  color: #61dafb;
+  font-size: 1rem;
+}
+
+.controls-overlay ul {
+  margin: 0.5rem 0;
+  padding-left: 1.2rem;
+}
+
+.controls-overlay li {
+  margin: 0.25rem 0;
+}
+
+.controls-overlay p {
+  margin: 0.5rem 0 0 0;
+  font-style: italic;
+  color: #ccc;
+}

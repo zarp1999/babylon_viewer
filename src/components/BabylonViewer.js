@@ -122,7 +122,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
           scaleFactor: terrainData.scaleFactor
         });
         
-        createTerrainMesh(terrainData);
+        await createTerrainMesh(terrainData);
         
         // メモリクリーンアップ
         if (terrainData.isLargeFile) {
@@ -134,7 +134,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     }
   };
 
-  const createTerrainMesh = (terrainData) => {
+  const createTerrainMesh = async (terrainData) => {
     if (!sceneRef.current) return;
 
     const { elevationData, width, height, bounds } = terrainData;
@@ -144,7 +144,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     const scaleZ = (bounds.maxY - bounds.minY) / (height - 1);
     
     // 地形メッシュの作成
-    const terrainMesh = createHeightMapMesh(
+    const terrainMesh = await createHeightMapMesh(
       elevationData,
       width,
       height,
@@ -212,7 +212,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
     }
   };
 
-  const createHeightMapMesh = (elevationData, width, height, bounds, scene, scaleX, scaleZ) => {
+  const createHeightMapMesh = async (elevationData, width, height, bounds, scene, scaleX, scaleZ) => {
     try {
       console.log(`地形メッシュ作成開始: ${width}x${height}, データ数: ${elevationData.length}`);
       

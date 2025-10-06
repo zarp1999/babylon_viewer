@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './App.css';
 import BabylonViewer from './components/BabylonViewer';
+import DynamicBabylonViewer from './components/DynamicBabylonViewer';
 import FileUploader from './components/FileUploader';
 import ControlPanel from './components/ControlPanel';
 
@@ -16,6 +17,7 @@ function App() {
     showGrid: true,
     cameraSpeed: 1.0
   });
+  const [viewerMode, setViewerMode] = useState('static'); // 'static' or 'dynamic'
 
   const handleFileLoad = async (file) => {
     setIsLoading(true);
@@ -67,13 +69,40 @@ function App() {
       
       <main className="App-main">
         <div className="sidebar">
-          <FileUploader 
-            onFileLoad={handleFileLoad}
-            isLoading={isLoading}
-            error={error}
-            progress={progress}
-          />
-          {fileInfo && (
+          <div className="viewer-mode-selector">
+            <h4>表示モード</h4>
+            <div className="mode-buttons">
+              <button 
+                className={viewerMode === 'static' ? 'active' : ''}
+                onClick={() => setViewerMode('static')}
+              >
+                静的表示
+              </button>
+              <button 
+                className={viewerMode === 'dynamic' ? 'active' : ''}
+                onClick={() => setViewerMode('dynamic')}
+              >
+                動的表示
+              </button>
+            </div>
+            <p className="mode-description">
+              {viewerMode === 'static' 
+                ? 'GeoTIFFファイルをアップロードして表示' 
+                : 'カメラ移動に連動して地形を動的読み込み'
+              }
+            </p>
+          </div>
+          
+          {viewerMode === 'static' && (
+            <FileUploader 
+              onFileLoad={handleFileLoad}
+              isLoading={isLoading}
+              error={error}
+              progress={progress}
+            />
+          )}
+          
+          {fileInfo && viewerMode === 'static' && (
             <div className="file-info-panel">
               <h4>ファイル情報</h4>
               <p><strong>ファイル名:</strong> {fileInfo.name}</p>
@@ -85,19 +114,27 @@ function App() {
               )}
             </div>
           )}
+          
           <ControlPanel
             settings={viewerSettings}
             onSettingsChange={handleSettingsChange}
-            disabled={!geotiffData}
+            disabled={viewerMode === 'static' ? !geotiffData : false}
           />
         </div>
         
         <div className="viewer-container">
-          <BabylonViewer
-            geotiffData={geotiffData}
-            settings={viewerSettings}
-            isLoading={isLoading}
-          />
+          {viewerMode === 'static' ? (
+            <BabylonViewer
+              geotiffData={geotiffData}
+              settings={viewerSettings}
+              isLoading={isLoading}
+            />
+          ) : (
+            <DynamicBabylonViewer
+              settings={viewerSettings}
+              isLoading={isLoading}
+            />
+          )}
         </div>
       </main>
     </div>
