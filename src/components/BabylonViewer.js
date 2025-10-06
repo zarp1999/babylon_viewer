@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Engine, Scene, ArcRotateCamera, HemisphericLight, Vector3, Color3, MeshBuilder, StandardMaterial, VertexData } from '@babylonjs/core';
+import { Engine, Scene, ArcRotateCamera, HemisphericLight, Vector3, Color3, MeshBuilder, StandardMaterial, VertexData, Mesh } from '@babylonjs/core';
 import { GeoTIFFLoader } from '../utils/GeoTIFFLoader';
 import './BabylonViewer.css';
 
@@ -280,7 +280,7 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
         }
       }
 
-      // インデックスの生成
+      // インデックスの生成（正しい三角形の作成）
       for (let y = 0; y < height - 1; y++) {
         for (let x = 0; x < width - 1; x++) {
           const topLeft = y * width + x;
@@ -288,14 +288,15 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
           const bottomLeft = (y + 1) * width + x;
           const bottomRight = bottomLeft + 1;
 
-          // 最初の三角形
-          indices.push(topLeft, bottomLeft, topRight);
-          // 2番目の三角形
-          indices.push(topRight, bottomLeft, bottomRight);
+          // 最初の三角形（時計回り）
+          indices.push(topLeft, topRight, bottomLeft);
+          // 2番目の三角形（時計回り）
+          indices.push(topRight, bottomRight, bottomLeft);
         }
       }
 
       console.log(`頂点数: ${positions.length / 3}, インデックス数: ${indices.length}`);
+      console.log(`最初の10頂点: ${positions.slice(0, 30).map((v, i) => i % 3 === 0 ? `\n(${v.toFixed(2)},` : i % 3 === 1 ? `${v.toFixed(2)},` : `${v.toFixed(2)})`).join('')}`);
 
       // VertexDataを使用してメッシュを作成
       const vertexData = new VertexData();
@@ -307,9 +308,9 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       vertexData.normals = [];
       VertexData.ComputeNormals(positions, indices, vertexData.normals);
 
-    // メッシュの作成
-    const customMesh = MeshBuilder.CreateGround('terrain', { width: 1, height: 1, subdivisions: 1 }, scene);
-    vertexData.applyToMesh(customMesh);
+      // カスタムメッシュを作成
+      const customMesh = new Mesh('terrain', scene);
+      vertexData.applyToMesh(customMesh);
 
     // 地形を底面が原点0になるように下げる
     const minValue = minElevation * verticalExaggeration * settings.heightScale;
