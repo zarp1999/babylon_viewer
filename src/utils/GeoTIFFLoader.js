@@ -118,16 +118,18 @@ class GeoTIFFLoader {
         const maxDimension = Math.max(width, height);
         const totalPixels = width * height;
         
-        // より柔軟な制限を適用
+        // より保守的な制限を適用（スタックオーバーフロー対策）
         let targetResolution = this.maxResolution;
-        if (totalPixels > 10000000) { // 1000万ピクセル以上
-          targetResolution = 1024; // 高解像度ファイル用
+        if (totalPixels > 20000000) { // 2000万ピクセル以上
+          targetResolution = 512; // 非常に大きなファイル用
+        } else if (totalPixels > 10000000) { // 1000万ピクセル以上
+          targetResolution = 768; // 高解像度ファイル用
         } else if (totalPixels > 5000000) { // 500万ピクセル以上
-          targetResolution = 1536;
+          targetResolution = 1024;
         } else if (totalPixels > 2000000) { // 200万ピクセル以上
-          targetResolution = 2048;
+          targetResolution = 1536;
         } else if (totalPixels > 1000000) { // 100万ピクセル以上
-          targetResolution = 2560;
+          targetResolution = 2048;
         }
         
         if (maxDimension > targetResolution) {
@@ -472,14 +474,16 @@ class GeoTIFFLoader {
     const maxDimension = Math.max(width, height);
     const totalPixels = width * height;
     
-    // より柔軟な解像度制限
+    // より保守的な解像度制限（スタックオーバーフロー対策）
     let targetResolution = this.maxResolution;
     if (totalPixels > 20000000) { // 2000万ピクセル以上
-      targetResolution = 1024;
+      targetResolution = 512; // 非常に大きなファイル用
     } else if (totalPixels > 10000000) { // 1000万ピクセル以上
-      targetResolution = 1536;
+      targetResolution = 768; // 高解像度ファイル用
     } else if (totalPixels > 5000000) { // 500万ピクセル以上
-      targetResolution = 2048;
+      targetResolution = 1024;
+    } else if (totalPixels > 2000000) { // 200万ピクセル以上
+      targetResolution = 1536;
     }
     
     if (maxDimension <= targetResolution) {

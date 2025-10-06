@@ -249,7 +249,10 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
       const indices = [];
       const uvs = [];
 
-      // 頂点の生成
+      // 頂点の生成（バッチ処理でスタックオーバーフローを防ぐ）
+      const batchSize = 1000; // バッチサイズを小さくする
+      let processedCount = 0;
+      
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
           const index = y * width + x;
@@ -277,10 +280,18 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
 
           positions.push(xPos, yPos, zPos);
           uvs.push(x / (width - 1), y / (height - 1));
+          
+          // バッチ処理の進捗をチェック
+          processedCount++;
+          if (processedCount % batchSize === 0) {
+            // 非同期処理を可能にするため、次のイベントループで処理を継続
+            await new Promise(resolve => setTimeout(resolve, 0));
+          }
         }
       }
 
-      // インデックスの生成（正しい三角形の作成）
+      // インデックスの生成（バッチ処理でスタックオーバーフローを防ぐ）
+      let indexCount = 0;
       for (let y = 0; y < height - 1; y++) {
         for (let x = 0; x < width - 1; x++) {
           const topLeft = y * width + x;
@@ -292,6 +303,13 @@ const BabylonViewer = ({ geotiffData, settings, isLoading }) => {
           indices.push(topLeft, topRight, bottomLeft);
           // 2番目の三角形（時計回り）
           indices.push(topRight, bottomRight, bottomLeft);
+          
+          // バッチ処理の進捗をチェック
+          indexCount += 6; // 各四角形で6つのインデックス
+          if (indexCount % (batchSize * 6) === 0) {
+            // 非同期処理を可能にするため、次のイベントループで処理を継続
+            await new Promise(resolve => setTimeout(resolve, 0));
+          }
         }
       }
 
